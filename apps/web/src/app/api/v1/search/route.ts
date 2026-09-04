@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { logger } from '@/lib/logger';
 import { recordRequest } from '@/lib/monitoring';
 import { withRequestId } from '@/lib/request-id';
+import { withCompression } from '@/lib/compress';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -142,4 +143,4 @@ async function GETHandler(request: Request) {
   }
 }
 
-export const GET = withRequestId(GETHandler);
+export const GET = withCompression(withRequestId(GETHandler));

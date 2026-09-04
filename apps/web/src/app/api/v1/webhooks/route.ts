@@ -8,17 +8,12 @@ import { prismaErrorResponse } from '@/lib/prisma-errors';
 import { rateLimit } from '@/lib/rate-limit';
 import { isPublicWebhookEndpoint } from '@/lib/ssrf';
 import { maskSecret, sanitizeWebhook } from '@/lib/webhook-utils';
+import { CreateWebhookSchema } from '@/lib/webhook-schemas';
 import { withRequestId } from '@/lib/request-id';
+import { withCompression } from '@/lib/compress';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const CreateWebhookSchema = z.object({
-  endpoint: z.string().url('Must be a valid HTTPS URL'),
-  events: z.array(EventType).min(1, 'At least one event type is required'),
-  secret: z.string().min(16, 'Secret must be at least 16 characters').optional(),
-  userId: z.string().optional().default('default'),
-});
 
 const ListWebhooksQuerySchema = z.object({
   page: z.coerce.number().min(1).default(1),
@@ -157,5 +152,5 @@ async function POSTHandler(request: Request) {
   }
 }
 
-export const GET = withRequestId(GETHandler);
+export const GET = withCompression(withRequestId(GETHandler));
 export const POST = withRequestId(POSTHandler);
