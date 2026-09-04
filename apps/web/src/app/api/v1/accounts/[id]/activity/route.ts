@@ -6,6 +6,7 @@ import { buildPaginationArgs, paginatedResponse, type PaginationParams } from '@
 import { rateLimit } from '@/lib/rate-limit';
 import { isValidPublicKey } from '@mizpah-pulse/stellar';
 import { withRequestId } from '@/lib/request-id';
+import { withCompression } from '@/lib/compress';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -110,4 +111,4 @@ async function GETHandler(request: Request, props: { params: Promise<{ id: strin
   }
 }
 
-export const GET = withRequestId(GETHandler);
+export const GET = withCompression(withRequestId(GETHandler));
