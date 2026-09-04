@@ -6,7 +6,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import DashboardPage from '@/app/dashboard/page';
 
 const fetchMock = vi.fn();
@@ -18,6 +18,13 @@ const STATS_RESPONSE = {
     eventsLast24h: 234,
     uniqueAccounts: 56,
     trackedContracts: 7,
+    topAccounts: [
+      { accountId: 'GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ', count: 128 },
+      { accountId: 'GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ', count: 96 },
+      { accountId: 'GHIJ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ', count: 74 },
+      { accountId: 'GKLM1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ', count: 51 },
+      { accountId: 'GNOP1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ', count: 29 },
+    ],
     recentActivity: [],
   },
 };
@@ -86,5 +93,59 @@ describe('DashboardPage', () => {
     expect(
       await screen.findByRole('tooltip', { name: /distinct Stellar accounts observed/i }),
     ).toBeInTheDocument();
+  });
+
+  it('lists the top five accounts with their event counts (issue #13)', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => STATS_RESPONSE });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DashboardPage />);
+
+    expect(await screen.findByText('Top Accounts')).toBeInTheDocument();
+    expect(screen.getByText('GABC12...WXYZ')).toBeInTheDocument();
+
+    // All five accounts from the API are present, ranked 1-5.
+    expect(screen.getByText('128 events')).toBeInTheDocument();
+    expect(screen.getByText('96 events')).toBeInTheDocument();
+    expect(screen.getByText('74 events')).toBeInTheDocument();
+    expect(screen.getByText('51 events')).toBeInTheDocument();
+    expect(screen.getByText('29 events')).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem')).toHaveLength(5);
+  });
+
+  it('copies a full account address from the top-accounts list', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => STATS_RESPONSE });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+
+    render(<DashboardPage />);
+
+    const copyButton = await screen.findByRole('button', { name: 'Copy GABC12...WXYZ' });
+    fireEvent.click(copyButton);
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+    });
+  });
+
+  it('shows a graceful empty state when there is no account activity', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: { ...STATS_RESPONSE.data, topAccounts: [] },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DashboardPage />);
+
+    expect(await screen.findByText(/No account activity recorded yet/i)).toBeInTheDocument();
+    expect(screen.queryByRole('listitem')).not.toBeInTheDocument();
   });
 });

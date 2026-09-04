@@ -3,7 +3,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, cn, Skeleton, Tooltip } from '@mizpah-pulse/ui';
-import { Activity, ArrowLeftRight, FileCode, Info, Send, TrendingUp, Wallet } from 'lucide-react';
+import {
+  Activity,
+  ArrowLeftRight,
+  Check,
+  Copy,
+  FileCode,
+  Info,
+  Send,
+  TrendingUp,
+  Trophy,
+  Wallet,
+} from 'lucide-react';
 import { formatTimeAgo } from '@/lib/date-utils';
 import { truncateAddress } from '@/lib/display-utils';
 import { apiFetch } from '@/lib/api-client';
@@ -16,11 +27,17 @@ interface RecentActivityItem {
   accountId: string | null;
 }
 
+interface TopAccount {
+  accountId: string;
+  count: number;
+}
+
 interface DashboardStats {
   totalEvents: number;
   eventsLast24h: number;
   uniqueAccounts: number;
   trackedContracts: number;
+  topAccounts: TopAccount[];
   recentActivity: RecentActivityItem[];
 }
 
@@ -29,6 +46,28 @@ const FALLBACK_STATS: DashboardStats = {
   eventsLast24h: 1247,
   uniqueAccounts: 156,
   trackedContracts: 12,
+  topAccounts: [
+    {
+      accountId: 'GABC1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      count: 128,
+    },
+    {
+      accountId: 'GDEF1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      count: 96,
+    },
+    {
+      accountId: 'GHIJ1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      count: 74,
+    },
+    {
+      accountId: 'GKLM1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      count: 51,
+    },
+    {
+      accountId: 'GNOP1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+      count: 29,
+    },
+  ],
   recentActivity: [
     {
       id: '1',
@@ -80,6 +119,8 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>(FALLBACK_STATS);
   const [dataSource, setDataSource] = useState<DataSource>('loading');
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Which top-account address currently shows the "copied" affordance.
+  const [copiedAccount, setCopiedAccount] = useState<string | null>(null);
 
   const loadStats = useCallback(async () => {
     setDataSource('loading');
@@ -118,6 +159,28 @@ export default function DashboardPage() {
   }, []);
 
   const loading = dataSource === 'loading';
+
+  /** Copy a top-account address to the clipboard with a brief confirmation. */
+  const copyAccount = useCallback(async (accountId: string) => {
+    try {
+      await navigator.clipboard?.writeText(accountId);
+    } catch {
+      // Clipboard API unavailable (e.g. insecure context) — fall back to the
+      // legacy textarea trick so the address is still copyable.
+      const textarea = document.createElement('textarea');
+      textarea.value = accountId;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    setCopiedAccount(accountId);
+    window.setTimeout(() => {
+      setCopiedAccount((current) => (current === accountId ? null : current));
+    }, 1500);
+  }, []);
 
   const statCards = [
     {
@@ -260,6 +323,73 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* Top Accounts */}
+      <Card>
+        <CardContent>
+          <div className="mb-4 flex items-center gap-2">
+            <Trophy className="h-5 w-5 text-amber-500" aria-hidden="true" />
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+              Top Accounts
+            </h2>
+          </div>
+          {loading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-lg p-3">
+                  <Skeleton className="h-4 w-6" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-4 w-52" />
+                  </div>
+                  <Skeleton className="h-3 w-16" />
+                </div>
+              ))}
+            </div>
+          ) : (stats.topAccounts ?? []).length === 0 ? (
+            <p className="rounded-lg bg-slate-50 px-4 py-6 text-center text-sm text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+              No account activity recorded yet — events will appear here as they are indexed.
+            </p>
+          ) : (
+            <ol className="space-y-1">
+              {(stats.topAccounts ?? []).map((account, index) => {
+                const isCopied = copiedAccount === account.accountId;
+                return (
+                  <li
+                    key={account.accountId}
+                    className="flex items-center gap-3 rounded-lg p-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-900"
+                  >
+                    <span className="w-5 flex-shrink-0 text-sm font-semibold text-slate-400 dark:text-slate-500">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-mono text-sm text-slate-900 dark:text-slate-100">
+                        {truncateAddress(account.accountId)}
+                      </p>
+                    </div>
+                    <span className="flex-shrink-0 text-xs font-medium text-slate-500 dark:text-slate-400">
+                      {account.count.toLocaleString()} events
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void copyAccount(account.accountId);
+                      }}
+                      aria-label={`Copy ${truncateAddress(account.accountId)}`}
+                      className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-500 dark:hover:bg-slate-800"
+                    >
+                      {isCopied ? (
+                        <Check className="h-4 w-4 text-emerald-500" aria-hidden="true" />
+                      ) : (
+                        <Copy className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Recent Activity */}
       <Card>

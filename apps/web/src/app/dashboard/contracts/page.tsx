@@ -10,11 +10,13 @@ import {
   StatusDot,
   EmptyState,
   Spinner,
+  Skeleton,
   DataTable,
 } from '@mizpah-pulse/ui';
 import { ContractInvokeModal } from '@/components/ContractInvokeModal';
 import { useWallet } from '@/context/WalletContext';
-import { FileCode, Zap, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react';
+import { formatTimeAgo } from '@/lib/date-utils';
+import { FileCode, Zap, AlertTriangle, CheckCircle, ExternalLink, History } from 'lucide-react';
 
 interface ContractActivity {
   id: string;
@@ -23,6 +25,15 @@ interface ContractActivity {
   invocations: number;
   lastCalled: string;
   status: 'active' | 'error' | 'idle';
+}
+
+/** A recent SOROBAN_INVOKE event shown in the invocation history panel (#14). */
+interface InvocationRecord {
+  id: string;
+  severity: string;
+  timestamp: string;
+  transactionHash: string | null;
+  payload: Record<string, unknown> | null;
 }
 
 // PulseContract ID — deployed on Stellar Testnet
@@ -72,12 +83,37 @@ const statusIcon = {
   idle: <Zap className="h-4 w-4 text-slate-400" />,
 };
 
+/** Best-effort Soroban function name from an invocation event payload. */
+function invocationFunction(record: InvocationRecord): string {
+  const payload = record.payload;
+  if (payload) {
+    for (const key of ['functionName', 'function', 'op']) {
+      const value = payload[key];
+      if (typeof value === 'string' && value.length > 0) return value;
+    }
+  }
+  return 'contract invoke';
+}
+
+/** Whether an invocation event represents a failed execution. */
+function invocationFailed(record: InvocationRecord): boolean {
+  const severity = record.severity.toUpperCase();
+  if (severity === 'ERROR' || severity === 'CRITICAL') return true;
+  const status = record.payload?.status;
+  return (
+    typeof status === 'string' && ['failed', 'error', 'reverted'].includes(status.toLowerCase())
+  );
+}
+
 export default function ContractsPage() {
   const { isConnected } = useWallet();
   const [search, setSearch] = useState('');
   const [invokeContractId, setInvokeContractId] = useState<string | null>(null);
   const [contracts, setContracts] = useState<ContractActivity[]>(mockContracts);
   const [loading, setLoading] = useState(true);
+  // Recent invocations of the deployed Pulse contract — null while loading.
+  const [invocations, setInvocations] = useState<InvocationRecord[] | null>(null);
+  const [invocationsFailed, setInvocationsFailed] = useState(false);
 
   // Load real contract activity from the API, falling back to sample data
   useEffect(() => {
@@ -119,6 +155,41 @@ export default function ContractsPage() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Load recent SOROBAN_INVOKE events for the deployed Pulse contract (#14).
+  useEffect(() => {
+    let cancelled = false;
+    const url =
+      `/api/v1/contracts/${DEPLOYED_CONTRACT_ID}/events` + '?eventType=SOROBAN_INVOKE&limit=6';
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body) => {
+        if (cancelled) return;
+        if (!body?.data?.events) {
+          setInvocationsFailed(true);
+          return;
+        }
+        setInvocations(
+          body.data.events.map((e: Record<string, unknown>) => ({
+            id: String(e.id),
+            severity: typeof e.severity === 'string' ? e.severity : 'INFO',
+            timestamp: String(e.timestamp),
+            transactionHash:
+              typeof e.transactionHash === 'string' ? (e.transactionHash as string) : null,
+            payload:
+              e.payload && typeof e.payload === 'object'
+                ? (e.payload as Record<string, unknown>)
+                : null,
+          })),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setInvocationsFailed(true);
       });
     return () => {
       cancelled = true;
@@ -242,6 +313,88 @@ export default function ContractsPage() {
           ]}
         />
       )}
+
+      {/* Recent Invocations (#14): SOROBAN_INVOKE history for the deployed
+          Pulse contract, fetched from /api/v1/contracts/:id/events. */}
+      <Card>
+        <CardContent>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <History className="h-5 w-5 text-indigo-500" aria-hidden="true" />
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  Recent Invocations
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Latest SOROBAN_INVOKE events for the deployed Pulse contract
+                </p>
+              </div>
+            </div>
+            <a
+              href={`https://stellar.expert/explorer/testnet/contract/${DEPLOYED_CONTRACT_ID}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+            >
+              View contract
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+            </a>
+          </div>
+
+          {invocationsFailed ? (
+            <p className="rounded-lg bg-red-50 px-4 py-6 text-center text-sm text-red-600 dark:bg-red-950 dark:text-red-400">
+              Could not load invocation history. Please try again later.
+            </p>
+          ) : invocations === null ? (
+            <div className="space-y-2" data-testid="invocation-history-skeleton" aria-hidden="true">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-lg p-3">
+                  <Skeleton className="h-4 w-32" />
+                  <div className="flex-1">
+                    <Skeleton className="h-3 w-48" />
+                  </div>
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                </div>
+              ))}
+            </div>
+          ) : invocations.length === 0 ? (
+            <p className="rounded-lg bg-slate-50 px-4 py-6 text-center text-sm text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+              No invocations recorded yet — invoke the Pulse contract to see history here.
+            </p>
+          ) : (
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              {invocations.map((record) => {
+                const failed = invocationFailed(record);
+                const txHash = record.transactionHash;
+                return (
+                  <li key={record.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {invocationFunction(record)}
+                      </p>
+                      <p className="text-xs text-slate-400">{formatTimeAgo(record.timestamp)}</p>
+                    </div>
+                    <Badge variant={failed ? 'error' : 'success'} size="sm" dot>
+                      {failed ? 'Failed' : 'Success'}
+                    </Badge>
+                    {txHash ? (
+                      <a
+                        href={`https://stellar.expert/explorer/testnet/tx/${txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label="View transaction on Stellar Expert"
+                        className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-indigo-500 dark:hover:bg-slate-800"
+                      >
+                        <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                      </a>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Contract Invocation Modal */}
       {invokeContractId && (
