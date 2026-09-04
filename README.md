@@ -256,11 +256,14 @@ Full **Freighter wallet** integration on Stellar Testnet with comprehensive erro
 | `GET` | `/api/v1/events/live` | Server-Sent Events stream |
 | `GET` | `/api/v1/accounts/:id` | Account details + on-chain data |
 | `GET` | `/api/v1/accounts/:id/activity` | Paginated account activity |
+| `GET` | `/api/v1/assets?q=` | Search assets by code or issuer |
 | `GET` | `/api/v1/contracts/:id` | Contract details + stats |
 | `GET` | `/api/v1/contracts/:id/events` | Paginated contract events |
-| `GET` | `/api/v1/stats` | Network-wide statistics |
+| `GET` | `/api/v1/stats` | Network-wide statistics (incl. top accounts) |
+| `GET` | `/api/v1/status` | Service dependency status (DB, WS, last event) |
 | `GET` | `/api/v1/search` | Multi-entity search |
 | `POST` | `/api/v1/webhooks` | Register webhook endpoint |
+| `POST` | `/api/v1/webhooks/batch` | Register up to 50 webhooks atomically |
 
 ### WebSocket Events
 
